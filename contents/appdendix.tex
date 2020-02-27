@@ -12,8 +12,6 @@
 \begin{itemize}
   \item data/\\
   実験で使用するデータセットを格納するためのディレクトリ.
-  \item document/\\
-  TeX 関連のファイルを格納するためのディレクトリ.
   \item log/\\
   log ファイルを格納するためのディレクトリ.\\
   実験で --log\_dir ./log と指定することで実験結果が書き込まれた log ファイルがここに保存される.
@@ -23,10 +21,14 @@
   \item notebook/\\
   Jupyter notebook ファイルを格納するためのディレクトリ.\\
   Google Colaboratory での実行や GTSRB データ作成のための notebook が格納されている.
+  \item tex@hoge\\
+  TeX ファイルをまとめた \href{https://github.com/yoheikikuta/a-primer-on-adversarial-examples-tex}{https://github.com/yoheikikuta/a-primer-on-adversarial-examples-tex} を submodule で管理している.
   \item .dockerignore\\
   Docker image を build する際に不要なファイルやディレクトリを指定するためのファイル.
   \item .gitignore\\
   Git で管理しないファイルやディレクトリを指定するためのファイル.
+  \item .gitmodules\\
+  submodule で管理しているレポジトリの情報を記載しているファイル.
   \item Dockerfile\\
   Docker image を build する際の構築手順をコード化したファイル.
   \item LICENSE\\
