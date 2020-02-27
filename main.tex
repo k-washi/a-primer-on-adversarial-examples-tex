@@ -1,0 +1,93 @@
+\documentclass[dvipdfmx,autodetect-engine]{jsarticle}
+\usepackage[top=20truemm,bottom=20truemm,left=25truemm,right=25truemm]{geometry}
+\usepackage{graphicx}
+\usepackage{amssymb}
+\usepackage{amsmath}
+\usepackage{hyperref}
+\hypersetup{
+    colorlinks=true,
+    linkcolor=blue,
+    filecolor=magenta,      
+    urlcolor=blue,
+}
+\usepackage{bm}
+\usepackage{listings}
+\usepackage{algorithm} 
+\usepackage{algpseudocode}
+\lstset{basicstyle=\footnotesize\ttfamily,breaklines=true}
+\newcommand{\argmax}{\mathop{\rm argmax}\limits}
+\newcommand{\argmin}{\mathop{\rm argmin}\limits}
+
+\title{A Primer on Adversarial Examples}
+\author{菊田遥平 (\href{https://twitter.com/yohei_kikuta}{@yohei\_kikuta})}
+
+
+
+\begin{document}
+\enlargethispage{\paperwidth}
+\thispagestyle{empty}
+\vspace*{1.0cm}
+\vspace*{-\topmargin}
+\vspace*{-\headheight}
+\vspace*{-\headsep}
+\vspace*{-\topskip}
+\includegraphics[width=15.5cm,height=22.0cm]{figures/cover.pdf}
+
+\maketitle
+
+\begin{abstract}
+本書は, adversarial examples の基本的な内容と, adversarial examples を用いた攻撃手法とそれに対する防御手法に関してまとめたものである.
+adversarial examples に関する様々なトピックを広く扱うというよりは, 独断と偏見でピックアップした攻撃手法と防御手法に注目し, それぞれの内容を表面的なレベルよりはもう少し踏み込んで理解することを目的としている.
+この分野に明るくない人が読めば, adversarial examples の基本的な部分は理解して, そのあとの発展的な内容をフォローしている程度の基礎体力はつくのではないかと期待している.
+
+adversarial examples そのものの性質やなぜ誤認識が生じるのかという原因などに関しては, 本書ではカバーしていない.
+基礎体力がつけばそのような話題にもついていきやすいと思うので, 興味がある人はぜひ先に進んで欲しい.
+
+本書では画像処理に対する adversarial examples のみを扱っており, 自然言語処理に対するものは扱っていない.
+個人的には自然言語処理に対するものにも興味があって色々勉強したので自然言語処理の章も足したいのだが, 思ったよりページ数が多くなってしまったのと現状ではやる気が枯渇してしまった.
+やる気が復活したらそのうち追記するかもしれない.
+
+本書を読むのに要求される機械学習の知識は少ない.
+勾配法の基礎を理解していて画像分析における classification と object detection モデルを触ったことがある人であれば, だいたいは理解できるのではないかと思う.
+もう少し進んだ知識が要求される場合もあるが, 本書ではそういう場合には踏み込んで解説はしていないので, 必要があれば適宜読者の方で元論文を追うなりして補完して欲しい.
+
+いくつかの攻撃手法や防御手法に関して PyTorch で実装したコードも \href{https://github.com/yoheikikuta/a-primar-on-adversarial-examples}{https://github.com/yoheikikuta/a-primar-on-adversarial-examples} で公開していて, 検証実験の結果も本書で解説している.
+
+本書の TeX ファイルも公開していて, 本書の内容やコードに対する Pull Request は大歓迎なので, 改善点があればどしどし送って欲しい.
+基本的に無料で公開しているが, 役に立ったという人は BOOTH で \href{https://yohei-kikuta.booth.pm/items/1867263}{https://yohei-kikuta.booth.pm/items/1867263} を買ってくれると著者にお金が入ります (内容は同じです).
+\end{abstract}
+
+\newpage
+\tableofcontents
+\newpage
+
+%% To insert chapter title page.
+% \newpage
+% \vspace*{\stretch{1}}
+% \begin{center}
+% {\Huge 20180820 DAY 1}
+% \end{center}
+% \vspace*{\stretch{2}}
+\clearpage
+\input{contents/section1.tex}
+\clearpage
+\input{contents/section2.tex}
+\clearpage
+\input{contents/section3.tex}
+\clearpage
+\input{contents/section4.tex}
+\clearpage
+\input{contents/section5.tex}
+\clearpage
+\input{contents/section6.tex}
+\clearpage
+\input{contents/section7.tex}
+\clearpage
+\appendix
+\input{contents/appdendix.tex}
+
+\clearpage
+\bibliographystyle{apalike}
+\bibliography{bibliography.bib}
+
+\end{document}

@@ -1,0 +1,184 @@
+\section{プログラムの補足説明}
+\label{sec:appendix-program}
+プログラムに関しては Git レポジトリの README.md とコードを見れば理解できるようになっているが, 少し複雑な部分もあるため, 補足説明を appendix として記載する.
+本当はもう少し小さいコードにする予定だったが, ちょこちょこ実験を追加していたらそこそこのサイズになってしまった.
+これくらいになるとコマンドライン引数も煩わしいので, やる気になったら直すかもしれない (とは言え, そこまで使い回すコードでもないので多分やらないと思う).
+
+
+\subsection{ディレクトリ構成}
+\label{subsec:appendix-directory}
+ディレクトリのトップの構成は以下のようになっている.
+%
+\begin{itemize}
+  \item data/\\
+  実験で使用するデータセットを格納するためのディレクトリ.
+  \item document/\\
+  TeX 関連のファイルを格納するためのディレクトリ.
+  \item log/\\
+  log ファイルを格納するためのディレクトリ.\\
+  実験で --log\_dir ./log と指定することで実験結果が書き込まれた log ファイルがここに保存される.
+  \item model/\\
+  PyTorch のモデルファイルを格納するためのディレクトリ.\\
+  データセット毎にディレクトリが作れられるようになっている.
+  \item notebook/\\
+  Jupyter notebook ファイルを格納するためのディレクトリ.\\
+  Google Colaboratory での実行や GTSRB データ作成のための notebook が格納されている.
+  \item .dockerignore\\
+  Docker image を build する際に不要なファイルやディレクトリを指定するためのファイル.
+  \item .gitignore\\
+  Git で管理しないファイルやディレクトリを指定するためのファイル.
+  \item Dockerfile\\
+  Docker image を build する際の構築手順をコード化したファイル.
+  \item LICENSE\\
+  ライセンス情報を記載したファイル.
+  MIT ライセンスで公開している.
+  \item README.md\\
+  README ファイル.
+  \item data.py\\
+  データに関するクラスを記述しているファイル.
+  \item env.yml\\
+  分析環境として Anaconda を使用しており, ベースとなる環境を再現するためにライブラリのバージョン情報などを残しているファイル.
+  \item main.py\\
+  各種実験を実施するためのファイル.
+  このファイルをオプション付きで実施することで各種実験を実行する.
+  オプションに関しては README.md に全オプションの説明を記載している.
+  \item model.py\\
+  モデルに関するクラスを記述しているファイル.
+  モデル全体の定義や Stochastic Activation Pruning モジュールの定義などが記述されている.
+  \item tox.ini\\
+  flake8 などの linter のための設定ファイル.
+  自分は VSCode の Remote Development を使っていて, そこでの設定ファイルの名残.
+  消してもいいのだが linter 情報を残しておいて欲しいという人がいるかもしれないので残している.
+\end{itemize}
+%
+
+
+
+\subsection{実験で使用するデータの説明}
+\label{subsec:appendix-data}
+本資料の検証実験では \ref{subsec:data-and-model} 節に記載したように CIFAR10 と GTSRB を用いている.
+前者は PyTorch の torchvision.datasets.CIFAR10 をそのまま用いているので特に注意すべき点はないが, 後者は画像サイズもバラバラで .ppm 形式で提供されているため前処理が必要である.
+前処理は notebook/GTSRB\_preprocesing.ipynb ファイルで実施して最終的に [3, 50, 50] に統一された GTSRB\_processed データセットを作成している.
+この節ではその処理内容を解説する.
+
+GTSRB データセットは学習とテスト画像がそれぞれ 39,209 枚と 12,630 枚提供されているが, 著者の勘違いでテストデータのラベルが提供されていないと思って学習データのみでデータセットを構築している.
+本資料の検証実験では, 学習データをランダムに 4:1 の割合で学習とテストデータを作成し, それぞれ 31,368 枚と 7,841 枚準備した.
+
+画像サイズは $15 \times 15$ から $250 \times 250$ の範囲にありバラバラであるが, height も width も平均が有効数字 2 桁で 50 であるため全て $50 \times 50$ にリサイズした.
+
+作成したデータセットは data/GTSRB\_processed というディレクトリ名で以下の構成で保存している.
+この構成は PyTorch の torchvision.datasets.ImageFolder で取り扱うことができる.
+%
+\begin{lstlisting}[language=bash]
+  - data/GTSRB_processed/
+    - train/
+      - 00000/
+        - 00000_00001.png
+        - 00000_00002.png
+        - ...
+      - 00001/
+      - ...
+    - test/
+      - 00000/
+      - 00001/
+      - ...
+\end{lstlisting}
+%
+
+作成したデータはバイナリファイルとして提出している Git レポジトリに含めているが, Git のトラッキング対象外にしている.
+
+
+
+\subsection{学習済みモデル}
+\label{subsec:appendix-model}
+使用しているモデルのアーキテクチャは巨大なものではなくデータセットも小規模ではあるが, モデルの学習は GPU によっては数日程度掛かるものもある.
+学習済みモデルは \href{https://drive.google.com/drive/folders/1sJJ6WQ4X-Hdsoh1YVMVz05Hn5N6hzm0E?usp=sharing}{Google Drive} で配布しているが, 前述のように GTSRB に関しては通常よりも少なめの学習データになっていることに注意されたい.
+%
+\begin{lstlisting}[language=bash]
+  - model/
+    - cifar10/
+      - model_normal_fgsm_adta.pt
+      - model_normal_fgsm.pt
+      - model_normal_ifgsm.pt
+      - model_normal_mifgsm.pt
+      - model_normal_none.pt
+      - model_normal_rfgsm.pt
+    - GTSRB_processed/
+      - model_normal_fgsm_adta.pt
+      - model_normal_fgsm.pt
+      - model_normal_ifgsm.pt
+      - model_normal_mifgsm.pt
+      - model_normal_none.pt
+      - model_normal_rfgsm.pt
+\end{lstlisting}
+%
+
+
+
+\subsection{実験スクリプト実行の典型例}
+\label{subsec:appendix-exp-script}
+コード量がそれほど多くないため, データとモデルに関するクラス以外は全て main.py に集約している.
+加えて様々な実験をしているため, フラグの数も少し多くなっているため理解して使いこなすにはある程度コードを読み込む必要がある.
+この節では, 典型的な実験をすぐに実行できるように実行コマンドの例を挙げる.
+
+小さいモデルと epoch 数で学習スクリプトがうまく動くかを確認する場合.
+%
+\begin{lstlisting}[language=bash]
+  python main.py \
+    --dataset cifar10 \
+    --is_train \
+    --model simple \
+    --epochs 2
+\end{lstlisting}
+%
+
+CIFAR10 データで clean データを用いて学習し, そのまま学習したモデルを使って clean データでテストする場合（以降ログは標準出力ではなく log ディレクトリに保存することを想定する）.
+%
+\begin{lstlisting}[language=bash]
+  python main.py \
+    --log_dir ./log
+    --dataset CIFAR10 \
+    --is_train \
+    --model normal \
+    --train_method none \
+    --is_test \
+    --train_method none
+\end{lstlisting}
+%
+
+CIFAR10 データで FGSM で作成した adversarial examples を使い, さらに domain adaptation の loss を用いてモデルを学習する場合.
+%
+\begin{lstlisting}[language=bash]
+  python main.py \
+    --log_dir ./log
+    --dataset GTSRB_processed \
+    --is_train \
+    --model normal \
+    --train_method fgsm \
+    --use_atda_loss
+\end{lstlisting}
+%
+
+CIFAR10 データで学習済みモデル model/cifar10/model\_normal\_ifgsm.pt を用いて FGSM で作成した adversarial examples でテストする場合.
+%
+\begin{lstlisting}[language=bash]
+  python main.py \
+    --log_dir ./log
+    --dataset CIFAR10 \
+    --is_test \
+    --model_name_for_test model_normal_ifgsm \
+    --test_method fgsm
+\end{lstlisting}
+%
+
+GTSRB データで学習済みモデル model/GTSRB\_processed/model\_normal\_none.pt を用いて, I+FGSM で作成した adversarial examples のテストデータでカーネル密度推定の実験を実施する場合.
+%
+\begin{lstlisting}[language=bash]
+  python main.py \
+    --log_dir ./log
+    --dataset GTSRB_processed \
+    --model_name_for_test model_normal_none \
+    --test_method ifgsm \
+    --is_kde_test
+\end{lstlisting}
+%

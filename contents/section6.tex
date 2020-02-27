@@ -1,0 +1,460 @@
+\section{検証実験}
+\label{sec:exp}
+この章では、検証として実施した実験について記載する.
+個人的に特に興味があるのは防御方法の性能やコスト, またはそれに関連する元のモデルの degradation であるため, 検証実験としてはその観点に注目した設計をした.
+具体的には, 攻撃方法としてはベースラインとしてよく用いられる FGSM 系の手法を採用し, それに対して各種防御方法を試しその性能を比較する, という方針である.
+特に防御方法に関しては, 図 \ref{fig:defense-process} のプロセスとの関連を重視して, コストや効果を議論して重要性が高いと思われるものを取捨選択して試している.
+
+攻撃方法としては, FGSM, R+FGSM, I+FGSM, MI+FGSM, を採用した.
+パラメタは以下のように固定している.
+%
+\begin{itemize}
+  \item 摂動の大きさは $l_{\infty}$ ノルムで測り, その大きさとして $\epsilon = 4 / 255$.
+  \item R+FGSM におけるノイズの割合として $\alpha = 2 / 255$.
+  \item I+FGSM の繰り返し内での摂動の大きさとして $\alpha = 0.4 / 255$.
+  \item MI+FGSM の繰り返し内での摂動の大きさとして $\alpha = 0.8 / 255$.
+  \item MI+FGSM の momentum の decay factor として $\mu = 1$.
+  \item I+FGSM と MI+FGSM の繰り返し回数として $20$ 回.
+  \item adversarial training の割合として $\alpha = 0.8$\footnote{これはオリジナルの論文では 0.5 なのでそれに合わせてもよかったのだが, 元のモデルの性能を落とさないような防御手法に主たる興味があったため, adversarial examples の項の割合が小さくなるように設定した.}.
+\end{itemize}
+%
+
+防御方法としては, データ収集とモデル学習プロセスに属する adversarial training (\ref{subsec:explaining-and} 節) とその発展系として domain adaptation も合わせたもの \cite{song2018improving}, データ前処理プロセスに属する cropping の手法 (\ref{subsec:mitigating-adversarial} 節), 予測実行プロセスに属する Stochastic Activation Pruning  (\ref{subsec:stochastic-activation} 節), 予測結果後処理プロセスに属するカーネル密度推定 \cite{feinman2017detecting}, を採用した.
+学習時に adversarial examples を用いるものは \ref{subsec:explaining-and} 節で解説した label leaking の問題があるため, $y_{\text{true}}$ でなく $f_{\text{label}} (x)$ を用いる.
+
+手法によっては実装が公開されているものも少ないないが, ライブラリが異なっていたりバージョンが異なっていたりするため, 本書では全て PyTorch \cite{paszke2019pytorch} でフルスクラッチで実装している.
+
+
+
+\subsection{使用データとモデル}
+\label{subsec:data-and-model}
+検証実験で使用するデータは CIFAR10 と GTSRB である.
+後者はテストデータのラベルが公開されていないと著者が勘違いしたため, 39,209 枚ある学習データを 31,368 枚の学習データと 7,841 枚のテストデータに分割した\footnote{
+余裕があればこれは修正したいと思うが, 以降の実験ではデータ数が足りてなくて評価が難しいというものは無かった.
+それよりも, 画像サイズが小さすぎたり解くのが簡単すぎるという事実の方が問題で, より適切な評価をしていくにはそこを改善すべきと思う.
+}.
+%
+\begin{table}[htbp]
+\begin{center}
+\begin{tabular}{|c|c|c|}
+\hline
+データセット & 学習画像枚数 & テスト画像枚数 \\
+\hline
+\hline
+CIFAR10 & 50,000 & 10,000 \\
+\hline
+GTSRB & 31,368 & 7,841 \\
+\hline
+\end{tabular}
+\caption{
+検証実験で使用するデータの画像枚数.
+}
+\label{tb:data-num-image}
+\end{center}
+\end{table}
+%
+
+使用モデルは \cite{song2018improving} と同じモデルを採用している.
+これは検証実験がこの論文で実施している実験を参考にしている部分も多いため, 実装にバグがないかを結果から確認しやすいという理由に依る.
+モデルの詳細はプログラム内で記述しているが, ELU \cite{clevert2015fast} と Group Normalization \cite{wu2018group} を用いた CNN であり, 特別な機構などは導入していない.
+検証のために現実的なモデルに近しい複雑度を持つことは要求されるが, モデルの性能自体が重要になる実験ではないため, optimizer は SGD を learning rate が 0.001, momentum が 0.9 で固定して使用しておりチューニングは実施していない.
+
+このモデルを clean なデータで学習し, 各種攻撃で作成した adversarial examples で評価した結果が表 \ref{tb:exp-clean-training} である.
+実験方法を再確認しておくと, モデルの学習自体は clean なデータで通常の cross entropy loss で学習して, テストデータを作成する際に学習したモデルの勾配情報と正解ラベルを用いて adversarial examples を作成し, そのテストデータでの正答率を測定している.
+この結果は, CIFAR10 に関しては \cite{song2018improving} と近しい結果になっており, 実装が概ね問題ないことが確認できた.
+しかし, パラメタの違いなどから各攻撃手法に関する結果はいくぶん異なっている.
+この実験結果から, 攻撃手法はどれも期待通りに機能していることが読み取れる.
+摂動を微分情報を一度だけ使って作成する FGSM や R+FGSM でも正答率を大きく下げる攻撃手法になっているが, それを繰り返し使用する I+FGSM や MI+FGSM では CIFAR10 ではほぼ全て誤認識となっている.
+R+FGSM の攻撃性能が一番低いが, これは FGSM と比べるとモデルの勾配情報とは関係のないノイズの情報を加えているためで, 自然な振る舞いと考えられ, \cite{song2018improving} と同様の結果である.
+
+また, GTSRB は解くのが容易なデータになっており, その場合 adversarial examples に対する正答率も上昇するという傾向も確認できる.
+これは MNIST などでも同様の傾向が見られるもので, 簡単なデータセットの場合は難しいデータセットの場合よりも adversarial examples の効果は小さい.
+これは, 簡単に予測できる対象の場合は logit 空間でも比較的遠く離れていて, 予測を間違えさせるにはより大きな摂動が必要となっているのだと考えられる.
+%
+\begin{table}[htbp]
+\begin{center}
+\begin{tabular}{|c|c|c|c|c|c|}
+\hline
+データセット & clean & FGSM & R+FGSM & I+FGSM & MI+FGSM \\
+\hline
+\hline
+CIFAR10 & 0.8625 & 0.1034 & 0.2463 & 0.001797 & 0.001398 \\
+\hline
+GTSRB & 0.9955 & 0.3266 & 0.5981 & 0.2347 & 0.2268 \\
+\hline
+\end{tabular}
+\caption{
+clean なデータで学習したモデルに対して, 各種攻撃手法でテストデータとして adversarial examples を作成して精度を測定した結果.
+}
+\label{tb:exp-clean-training}
+\end{center}
+\end{table}
+%
+
+
+
+\subsection{adversarial training と domain adaptation による防御}
+\label{subsec:exp-adv-training}
+adversarial training は \ref{subsec:explaining-and} 節で解説した手法で, 学習時に adversarial examples を作成し, それを含めてモデルを学習するという手法である.
+各手法で adversarial examples を作成して adversarial training を実施したモデルに対して, 各手法で作成したテストデータを評価した結果が表 \ref{tb:exp-adv-training-fgsm} から表 \ref{tb:exp-adv-training-mifgsm} である.
+
+どの手法でも adversarial training の効果が出て adversarial examples のテストデータに対する正答率は向上している.
+攻撃性能が高い I+FGSM や MI+FGSM の方が adversarial training に使用した時の効果が高いことも分かる.
+しかし, その差は表 \ref{tb:exp-clean-training} のものよりは小さく, これは根幹となっているアルゴリズム自体は FGSM であるため似たような防御を実現していて, 与えられた $\epsilon$ の範囲では攻撃側がそれを打ち破れないためであると考えられる.
+
+adversarial training で学習したモデルの情報を使ってテストデータとなる adversarial examples を作成しているため, clean なテストデータの正答率と比べると正答率は低い.
+攻撃者がモデルの情報を使える white box attack の場合, 一つの手法のみで防御するということは難しく, 様々な手法を組み合わせる必要があるだろう.
+
+ここで比較している手法は全て FGSM に基づいているという点は注意が必要である.
+これらの結果からは adversarial training で使用していない攻撃手法に対してもある程度防御が成功しているように見えるが, それは攻撃手法が似ているためで, これ以外にもたくさんの攻撃手法があるため, 本来はそれらも含めて実験をして総合的に評価する必要がある.
+ただし, そのような多角的な検証は adversarial examples 自体が幅広く研究されているため容易ではなく, 個別の研究においても十分になされているものは殆どない.
+
+clean なデータセットに対する degradation は GTSRB では発生していないが CIFAR10 では発生している.
+絶対値で 1.5\% 程度であるので全く無視できるというレベルではないが, 元のモデルの予測は十分に機能しているので, この防御手法を採用するということは現実的な路線であろう.
+また, GTSRB では僅かではあるがむしろ正答率は向上している.
+そもそもほぼ 100\% 正解できるようなデータセットであるためここから何かの意味は見出しづらいが, 色々な論文を見ても degradation はデータセットに依る部分も大きく, 一つのデータセットの結果から結論を導くのは早計である.
+
+%
+\begin{table}[htbp]
+\begin{center}
+\begin{tabular}{|c|c|c|c|c|c|}
+\hline
+データセット & clean & FGSM & R+FGSM & I+FGSM & MI+FGSM \\
+\hline
+\hline
+CIFAR10 & 0.8487 & 0.4187 & 0.6427 & 0.3821 & 0.3766 \\
+\hline
+GTSRB & 0.9966 & 0.8536 & 0.9611 & 0.7425 & 0.7321 \\
+\hline
+\end{tabular}
+\caption{
+FGSM で作成した adversarial examples で adversarial training を実施し, 各種攻撃手法でテストデータとして adversarial examples を作成して精度を測定した結果.
+}
+\label{tb:exp-adv-training-fgsm}
+\end{center}
+\end{table}
+%
+
+%
+\begin{table}[htbp]
+\begin{center}
+\begin{tabular}{|c|c|c|c|c|c|}
+\hline
+データセット & clean & FGSM & R+FGSM & I+FGSM & MI+FGSM \\
+\hline
+\hline
+CIFAR10 & 0.8587 & 0.2941 & 0.5520 & 0.2341 & 0.2287 \\
+\hline
+GTSRB & 0.9963 & 0.7332 & 0.9364 & 0.6322 & 0.6197 \\
+\hline
+\end{tabular}
+\caption{
+R+FGSM で作成した adversarial examples で adversarial training を実施し, 各種攻撃手法でテストデータとして adversarial examples を作成して精度を測定した結果.
+}
+\label{tb:exp-adv-training-rfgsm}
+\end{center}
+\end{table}
+%
+
+%
+\begin{table}[htbp]
+\begin{center}
+\begin{tabular}{|c|c|c|c|c|c|}
+\hline
+データセット & clean & FGSM & R+FGSM & I+FGSM & MI+FGSM \\
+\hline
+\hline
+CIFAR10 & 0.8480 & 0.4403 & 0.6496 & 0.4056 & 0.4010 \\
+\hline
+GTSRB & 0.9959 & 0.8620 & 0.9599 & 0.7916 & 0.7799 \\
+\hline
+\end{tabular}
+\caption{
+I+FGSM で作成した adversarial examples で adversarial training を実施し, 各種攻撃手法でテストデータとして adversarial examples を作成して精度を測定した結果.
+}
+\label{tb:exp-adv-training-ifgsm}
+\end{center}
+\end{table}
+%
+
+%
+\begin{table}[htbp]
+\begin{center}
+\begin{tabular}{|c|c|c|c|c|c|}
+\hline
+データセット & clean & FGSM & R+FGSM & I+FGSM & MI+FGSM \\
+\hline
+\hline
+CIFAR10 & 0.8488 & 0.4418 & 0.6497 & 0.4050 & 0.4003 \\
+\hline
+GTSRB & 0.9962 & 0.8668 & 0.9615 & 0.7950 & 0.7860 \\
+\hline
+\end{tabular}
+\caption{
+MI+FGSM で作成した adversarial examples で adversarial training を実施し, 各種攻撃手法でテストデータとして adversarial examples を作成して精度を測定した結果.
+}
+\label{tb:exp-adv-training-mifgsm}
+\end{center}
+\end{table}
+%
+
+adversarial training の発展系として, domain adaptation の手法も取り入れることでより防御性能を高めるという手法があり, これも実装して実験を実施した.
+clean なデータを source domain, adversarial なデータを target domain と考え, 本当は $x$ に対して多様な $x_{\text{adv}}$ が存在するはずだが特定の手法に基づいて作成するので限定的なデータしか作成できず, それが target domain のデータが不十分であるとみなすことで domain adaptation の手法がうまく機能すると期待するものである.
+
+手法としては以下の新たな loss function を提案したものになっている.
+%
+\begin{eqnarray}
+J(f, \mathcal{D}_{\text{clean}}, \mathcal{D}_{\text{adv}}) &=& J_{\text{C}} (f, \mathcal{D}_{\text{clean}}) + J_{\text{C}} (f, \mathcal{D}_{\text{adv}}) + \lambda \cdot J_{\text{DA}} (f, \mathcal{D}_{\text{clean}}, \mathcal{D}_{\text{adv}}). \\
+&=& J_{\text{C}} (f, \mathcal{D}_{\text{clean}}) + J_{\text{C}} (f, \mathcal{D}_{\text{adv}}) \nonumber \\
+&&+ \lambda ( J_{\text{CORAL}} (f, \mathcal{D}_{\text{clean}}, \mathcal{D}_{\text{adv}}) + J_{\text{MMD}} (f, \mathcal{D}_{\text{clean}}, \mathcal{D}_{\text{adv}}) + J_{\text{margin}} (f, \mathcal{D}_{\text{clean}}, \mathcal{D}_{\text{adv}}) ). \nonumber
+\label{eq:atda-loss}
+\end{eqnarray}
+%
+ここで, $J_{\text{C}} (f, \mathcal{D})$ は通常の cross entropy loss であり, 残りの 3 つは domain adaptation の手法から持ち込まれた以下の loss function である.
+%
+\begin{eqnarray}
+J_{\text{CORAL}} (f, \mathcal{D}_{\text{clean}}, \mathcal{D}_{\text{adv}}) &=& \frac{1}{C^2} \| Cov_{f(\mathcal{D}_{\text{clean}})} - Cov_{f(\mathcal{D}_{\text{adv}})} \|_1.
+\label{eq:atda-coral} \\
+J_{\text{MMD}} (f, \mathcal{D}_{\text{clean}}, \mathcal{D}_{\text{adv}}) &=& \frac{1}{C} \left\| \frac{1}{| \mathcal{D}_{\text{clean}}|} \sum_{x} f_{\text{logit}} (x) - \frac{1}{|\mathcal{D}_{\text{adv}}|} \sum_{x_{\text{adv}}} f_{\text{logit}} (x_{\text{adv}}) \right\|.
+\label{eq:atda-mmd} \\
+J_{\text{margin}} (f, \mathcal{D}_{\text{clean}}, \mathcal{D}_{\text{adv}}) &=& \frac{1}{(C - 1) (| \mathcal{D}_{\text{clean}}| + | \mathcal{D}_{\text{adv}}|)} \cdot \nonumber \\
+&& \sum_{x, x_{\text{adv}}} \sum_{c^n \in \mathcal{C} \backslash \{c_{y_{\text{true}}}\}} \text{softplus} (\|f_{\text{logit}} - c_{y_{\text{true}}}\|_1 - \|f_{\text{logit}} - c^n\|_1).
+\label{eq:atda-margin}
+\end{eqnarray}
+%
+$Cov$ は $C$ 次元の logit 空間において clean と adversarial examples のデータがそれぞれ別の正規分布から生成されたものと仮定したときの covariant matrix である.
+あるクラス $y$ の logit 空間での中心ベクトルが $c_y$ である.
+目的としているのは clean も adversarial examples も logit 空間では同じように扱うということであり, 式 \ref{eq:atda-coral} は平均を除いて同じ分布になることを要請し, 式 \ref{eq:atda-mmd} は logit の平均が一致することを要請し, 式 \ref{eq:atda-margin} では正しいラベルの中心には近づくよう, 正しくないラベルの中心からは離れるよう要請している.
+logit 空間での中心ベクトルは学習と共に変化していくものであり, 以下でアップデートする.
+%
+\begin{eqnarray}
+\Delta c^{(t)}_y &=& \frac{\sum_{x, x_{\text{adv}}} \mathbf{1}_{y_{\text{true}} = y} \cdot (c^{(t)}_{y} - f_{\text{logit}} (x)) }{1 + \sum_{x, x_{\text{adv}}} \mathbf{1}_{y_{\text{true}} = y}}. \\
+c^{(t + 1)}_y &=& c^{(t)}_y - \alpha \cdot \Delta c^{(t)}_y.
+\label{eq:atda-update-center}
+\end{eqnarray}
+%
+ここで, $\mathbf{1}_{\text{condition}}$ は condition が true なら 1 で false なら 0 を取るものとして定義している.
+
+
+学習時の adversarial examples の作成は FGSM を用いて, 各手法でテストデータを作成して正答率を測定した結果が表 \ref{tb:exp-adv-training-domain} である.
+adversarial examples に対する防御性能は大きく向上していて, R+FGSM では絶対値で 5\% 程度だが, それ以外に対しては絶対値で 10\% 以上向上している.
+domain adaptation のような別の領域でのアイデアを導入して性能が高まったという点は興味深く, これ以外にも adversarial examples の防御に有効な様々なアイデアが別領域に眠っているだろう.
+CIFAR10 では clean データに対して少し性能が劣化してしまっているが, これは \cite{song2018improving} でも同様の傾向で, CIFAR100 のようにクラス数が多い場合は逆に精度が向上することが示されている.
+%
+\begin{table}[htbp]
+\begin{center}
+\begin{tabular}{|c|c|c|c|c|c|}
+\hline
+データセット & clean & FGSM & R+FGSM & I+FGSM & MI+FGSM \\
+\hline
+\hline
+CIFAR10 & 0.8081 & 0.5755 & 0.6989 & 0.5563 & 0.5543 \\
+\hline
+GTSRB & 0.9967 & 0.9388 & 0.9781 & 0.8682 & 0.8542 \\
+\hline
+\end{tabular}
+\caption{
+FGSM で作成した adversarial examples で domain adaptation を併用した adversarial training を実施し, 各種攻撃手法でテストデータとして adversarial examples を作成して正答率を測定した結果.
+}
+\label{tb:exp-adv-training-domain}
+\end{center}
+\end{table}
+%
+
+
+
+\subsection{入力データの cropping による防御}
+\label{subsec:exp-cropping}
+この手法は \ref{subsec:mitigating-adversarial} 節で解説した手法で, 入力データをランダムにリサイズしてから 0-padding することで摂動の効きを悪くして防御する手法である.
+実装が容易であり, clean データで学習したモデルに変更なく導入できるのが利点である.
+
+CIFAR10 ではテストの推測時に最終的な画像サイズが (34, 34) にすることにして, まず画像をランダムに \{32, 33\} にリサイズし, それを (34, 34) にするように上下左右にランダムに 0-padding する.
+CIFAR10 ではテストの推測時に最終的な画像サイズが (52, 52) にすることにして, まず画像をランダムに \{50, 51\} にリサイズし, それを (52, 52) にするように上下左右にランダムに 0-padding する.
+通常の画像サイズで clean データで学習したモデルに対して各種攻撃手法でテストデータを準備し, 上記手法で防御した結果が表 \ref{tb:exp-adv-training-domain-result} である.
+CIFAR10 は clean データに対する degradation が結構あるが adversarial examples に対する防御は一定度の成功を収めている.
+GTSRB では防御効果が薄く I+FGSM や MI+FGSM では少し正答率が上がっているが FGSM と R+FGSM では少し正答率が下がっている.
+%
+\begin{table}[htbp]
+\begin{center}
+\begin{tabular}{|c|c|c|c|c|c|}
+\hline
+データセット & clean & FGSM & R+FGSM & I+FGSM & MI+FGSM \\
+\hline
+\hline
+CIFAR10 & 0.6111 & 0.3511 & 0.4068 & 0.1400 & 0.1459 \\
+\hline
+GTSRB & 0.9451 & 0.3155 & 0.5772 & 0.2729 & 0.2652 \\
+\hline
+\end{tabular}
+\caption{
+clean データで学習したモデルに対して, 各種攻撃手法でテストデータとして adversarial examples を作成し, テスト時にリサイズと 0-padding で入力画像を変更して予測をして正答率を測定した結果.
+}
+\label{tb:exp-adv-training-domain-result}
+\end{center}
+\end{table}
+%
+
+clean データに対する degradation はそもそもの画像サイズが小さいため 0-padding の影響が大きいためだと考えられる.
+\cite{xie2017mitigating} では ILSVRC2012 を用いて [299, 331) という範囲でリサイズしていて clean データに対する degradation は小さい.
+
+この手法はシンプルで単独での効果はそれほど高くないが, 入力画像を少し変更するだけなので他の手法に組み入れやすい.
+FGSM で adversarial training したモデルで同様の実験をした結果が表 \ref{tb:exp-adv-training-domain-result-fgsm} である.
+CIFAR10 では R+FGSM 以外は組み合わせることによってそれぞれの単体の手法よりも良い防御性能を発揮している.
+GTSRB は adversarial training 単体の方が良い結果となっている.
+%
+\begin{table}[htbp]
+\begin{center}
+\begin{tabular}{|c|c|c|c|c|c|}
+\hline
+データセット & clean & FGSM & R+FGSM & I+FGSM & MI+FGSM \\
+\hline
+\hline
+CIFAR10 & 0.6124 & 0.4442 & 0.5452 & 0.4592 & 0.4591 \\
+\hline
+GTSRB & 0.9785 & 0.7926 & 0.9248 & 0.7259 & 0.7148 \\
+\hline
+\end{tabular}
+\caption{
+FGSM で作成した adversarial examples で adversarial training を実施したモデルに対して, 各種攻撃手法でテストデータとして adversarial examples を作成し, テスト時にリサイズと 0-padding で入力画像を変更して予測をして正答率を測定した結果.
+}
+\label{tb:exp-adv-training-domain-result-fgsm}
+\end{center}
+\end{table}
+%
+
+入力データを変更するというのは防御手法でよく用いられるものの一つだが, 単体では効果が十分ではない場合も多いため, 別手法と組み合わせながら効果を検証していく必要があるだろう.
+
+
+
+\subsection{Stochastic Activation Pruning による防御}
+\label{subsec:exp-sap}
+この手法は \ref{subsec:stochastic-activation} 節で解説した手法で, モデルの activation の出力をランダムに 0 にすることで摂動によるモデルの過敏な反応を取り除いて防御する手法である.
+論文では ResNet-20 の全ての ReLU の後にこの機構を導入しているが, 本検証実験で使用しているモデルにおいて全ての ELU の後にこの機構を導入すると計算が重くなるため, 出力に近い 4 つの ELU の後に導入した場合と入力に近い 2 つの ELU と出力に近い 2 つの ELU に導入した場合の結果を示す.
+データは CIFAR10, 攻撃方法は FGSM のみで試していて, 結果は表 \ref{tb:exp-adv-sap} の通りである.
+大まかな方向性としては期待しているように機能しているが, 防御方法としての性能は低く論文で報告されているような値は再現できていない.
+モデルアーキテクチャに問題がある可能性もあるため論文のモデルに近い ResNet-18 でも試してみたが, 結果はほとんど変わらなかった.
+実装にバグがある可能性が高いが, 著者が自分で確認した範囲ではバグを見つけることはできなかった.
+%
+\begin{table}[htbp]
+\begin{center}
+\begin{tabular}{|c|c|c|}
+\hline
+Stochastic Activation Pruning を導入した層 & clean & FGSM \\
+\hline
+\hline
+出力に近い 4 つの ELU の後 & 0.8068 & 0.2068\\
+\hline
+入力に近い 2 つと出力に近い 2 つの ELU の後 & 0.4787 & 0.3155\\
+\hline
+\end{tabular}
+\caption{
+Stochastic Activation Pruning の評価.
+モデルの学習は clean なデータで実施しており, テスト時に Stochastic Activation Pruning を導入している.
+}
+\label{tb:exp-adv-sap}
+\end{center}
+\end{table}
+%
+
+この手法は clean データで学習したモデルに後から付け加えることもできるため導入自体は難しくないが, 推測時に大量のサンプリングを必要とするため, 推論時間が著しく遅くなってしまう.
+例えば, 出力に近い 4 つの ELU の後に導入した場合, T4 GPU で数 fps 程度の推論速度になってしまいかなり遅くなってしまう.
+公式実装では MXNet で C++ で実装されたモジュールを呼び出しており, 高速化のためには低レベル側の実装に手を加える必要がある.
+
+
+
+\subsection{カーネル密度推定による防御}
+\label{subsec:exp-kde}
+カーネル密度推定を用いた手法 \cite{feinman2017detecting} は, clean なデータは所有しているので, 密度推定を実施して clean なデータから大きく外れるようなものを adversarial examples として除外するという手法である.
+元論文ではガウシアンカーネルを用いているため, 同様の実装をして実験をした.
+
+評価指標として以下の 3 つを用いる.
+%
+\begin{itemize}
+  \item $p(x_{\text{adv}}) / p(x) < 1$: データ点毎に密度推定の確率値の比を比較し, 1 より小さいものの割合を測定する.
+  \item ACC: 密度推定の確率値に基づき分類を実施し, その精度を測定する.
+  \item ROC-AUC: 密度推定の確率値に基づき AUC を測定する.
+\end{itemize}
+%
+
+元論文ではテストデータを用いて分類の閾値を求め, それで評価をしているのでリークが発生している\footnote{
+公式実装の GitHub レポジトリにも issue があげられているが回答はない: \href{https://github.com/rfeinman/detecting-adversarial-samples/issues/5}{https://github.com/rfeinman/detecting-adversarial-samples/issues/5}.
+}.
+ただし, 判別に使う密度推定の確率値は 1 次元なので閾値を調整するだけなので完全に実験として破綻しているほどではない. ここでは結果の比較をしやすくするため同様の手続きで評価している.
+
+モデルは clean データで学習したものを使用している.
+結果は表 \ref{tb:exp-kde} の通りで, ROC-AUC の値を元論文の値と同様の結果なので実装は適切であると考えられる.
+I+FGSM や MI+FGSM のように攻撃性能が高いものほど clean データ分布からの乖離が大きいので識別しやすくなっていることが分かる.
+%
+\begin{table}[htbp]
+\begin{center}
+\begin{tabular}{|c|c|c|c|c|}
+\hline
+データセットと評価指標 & FGSM & R+FGSM & I+FGSM & MI+FGSM \\
+\hline
+\hline
+CIFAR10 & & & & \\
+$p(x_{\text{adv}}) / p(x) < 1$ & 0.7133 & 0.6323 & 0.9018 & 0.8258 \\
+ACC & 0.6411 & 0.5807 & 0.7166 & 0.6655 \\
+ROC-AUC & 0.7038 & 0.6193 & 0.8002 & 0.7388 \\
+\hline
+GTSRB & & & & \\
+$p(x_{\text{adv}}) / p(x) < 1$ & 0.9807 & 0.9756 & 0.9955 & 0.9927 \\
+ACC & 0.8692 & 0.7944 & 0.9005 & 0.8924 \\
+ROC-AUC & 0.9452 & 0.8725 & 0.9619 & 0.9591 \\
+\hline
+\end{tabular}
+\caption{
+カーネル密度推定の実験結果.
+モデルは clean データで学習したものを使用している.
+}
+\label{tb:exp-kde}
+\end{center}
+\end{table}
+%
+
+この手法は adversarial examples か否かを分類するための手法であるため, これまで実験で使ってきた防御手法とは異なり, 実際に使う場合はモデルの予測結果と密度推定のスコア両方を計算してスコアが一定値以上なら予測結果を採用するという手順となる.
+一定値未満の場合にどうするかは運用に拠るが, 予測を実行せずにシステム管理者に知らせるなどが有り得るだろう.
+または, adversarial examples が疑われる画像に関しては他の防御手法を使って再度予測をする, というのも一つの手かもしれない.
+
+誤認識率が高い adversarial examples ほど clean なデータからの乖離が大きいので検出しやすい, という性質は他の手法と相補的に利用できるので興味深い.
+
+
+
+\subsection{実験結果から得られた知見}
+\label{subsec:exp-summary}
+一連の実験により, 既存研究のいくつかを検証することができた.
+ベースライン手法としてよく用いられる FGSM 系の手法を攻撃手法として, 防御プロセスのデータ収集から予測結果後処理プロセスまでに属する防御手法を導入した際のテストデータの正答率を測定した.
+防御手法としては adversarial training, 入力データの cropping, Stochastic Activation Pruning, カーネル密度推定, を用いた.
+結果がうまく再現できないものもあったが, 概ね元論文に近い結果が再現され, 報告されている防御手法が有効であることが確認された.
+
+防御手法として様々なアイデアが提案されているが, 王道で性能も高いのは adversarial training である.
+adversarial examples は入力データに含まれる摂動がモデル内での演算により増幅されて異なる予測に導くものであり, これは重みを変更することで回避できるものである.
+適切に重みを変更するために, 想定される攻撃手法で学習データとなる adversarial examples を作成してモデルを学習するのが adversarial training であり, 人間がこうなって欲しいという教師データを準備することによってモデルを学習するという典型的な教師有り機械学習のアプローチである.
+攻撃手法によって adversarial examples の作り方には一定の特徴があるため, 一度 adversarial training で学習すれば, 学習済みモデルの微分情報を使って再度 adversarial examples を作成しても一定度の正答率を保つことができる.
+
+摂動が増幅されるのを防ぐためには他にも色々なアプローチがある.
+入力に含まれる摂動が問題なので入力を変更するもの, モデル内部で増幅されていく摂動の効果を弱めるために activation をランダムに落とすもの, 摂動が増幅されるのを逆手にとって clean データの分布から得られたデータか否か判別するもの, のようにどこに注目するかによって様々な工夫がある.
+
+一方で, 単独の手法では十分な精度を担保することは難しいという結果も得られたため, 複数手法の組み合わせを考えてより頑健なモデルを構築していくというのは重要になるだろう.
+現状は研究レベルでも何か指針がある組み合わせを検証しているわけではないので, 防御手法の得手不得手を調べた上で効果的な組み合わせを探索していくというのは一つの方向性になると考えられる.
+
+防御手法を導入するには人的なコストや推論速度への影響を検討する必要があり, これは運用を考えれば不可欠な要素であるがそれほど調べられていない.
+また, 新しい手法が次々と出てくるため, 必要に応じて継続的に新たな防御手法を導入してシステムをアップデートする必要があるが, そのような観点での導入しやすさも考慮すべき要素である.
+研究が進むにつれて, 運用を意識した観点も重要視されていくだろう.
+
+本章で実施した実験は不十分な点があることに注意が必要である.
+まず, 計算機性能の制約から小さなデータセットに限定しているため, 実験結果をナイーブに一般化することはできない.
+各節でも述べているが, データセットによっては同じ手法で clean データに対して degradation が起きたり逆に性能が向上したりもするため, 実際には自分の興味のあるデータセットに対して実験をする必要がある.
+研究においても, 簡単なデータセットでは簡単すぎて調べたい性質が検証し切れない可能性があるため, 大きなデータセットで検証する必要があるだろう.
+adversarial examples の実験では MNIST や CIFAR など簡単なデータセットのみで実験をする場合が多かったが, 近年では ILSVRC2012 などを使うものも増えてきている.
+また, 攻撃手法として同系統の FGSM 系しか用いてない点も不十分である.
+同系統であるので一つの防御手法が他の手法にも機能しているように見えるが, これはコアとなるアルゴリズムが同じであることに起因するため, black box の手法も含めて様々な攻撃手法で検証する必要がある.
+本実験のようにフルスクラッチで実装する場合は網羅的な検証は難しいため, 統一的に検証ができるライブラリの存在が重要となる.
+以下のようなライブラリの需要は更に高まっていくだろう.
+%
+\begin{itemize}
+  \item \href{https://github.com/tensorflow/cleverhans}{https://github.com/tensorflow/cleverhans}.
+  \item \href{https://github.com/IBM/adversarial-robustness-toolbox}{https://github.com/IBM/adversarial-robustness-toolbox}.
+  \item \href{https://github.com/bethgelab/foolbox}{https://github.com/bethgelab/foolbox}.
+\end{itemize}
+%
